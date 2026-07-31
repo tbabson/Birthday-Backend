@@ -434,7 +434,7 @@ in a 300-row export should not cost the other 299.
   "imported": 126,
   "skippedAsDuplicates": 1,
   "remindersScheduled": 2,
-  "failedRows": [{ "row": 44, "reason": "Could not read a date from \"n/a\"" }],
+  "failedRows": [{ "row": 44, "message": "Could not read a date from \"n/a\"" }],
   "contacts": [],
   "today": "2026-07-31"
 }

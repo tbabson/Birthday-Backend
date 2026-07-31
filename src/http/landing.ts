@@ -424,7 +424,7 @@ export function renderLandingPage(appUrl: string): string {
       <h5>201</h5>
 <pre>{
   "imported": 126, "skippedAsDuplicates": 1, "remindersScheduled": 2,
-  "failedRows": [ { "row": 44, "reason": "Could not read a date from \\"n/a\\"" } ],
+  "failedRows": [ { "row": 44, "message": "Could not read a date from \\"n/a\\"" } ],
   "contacts": [ … ], "today": "2026-07-31"
 }</pre>
       <p class="errs">Unreadable rows are reported rather than aborting the run — one malformed date in a
