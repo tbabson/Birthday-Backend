@@ -1,0 +1,56 @@
+# Fly.io deployment. Two processes from one image (brief §6.1 — the Redis
+# dependency rules out pure serverless for the worker).
+#
+#   fly launch --no-deploy
+#   fly postgres create   &&  fly postgres attach <name>
+#   fly redis create      &&  fly secrets set REDIS_URL=...
+#   fly secrets set SESSION_SECRET=$(openssl rand -hex 32) \
+#                  EMAIL_PROVIDER=smtp SMTP_HOST=... SMTP_USER=... SMTP_PASS=...
+#   fly deploy
+
+app = "birthday-reminder"
+primary_region = "jnb"        # Johannesburg is the closest region to Lagos.
+
+[build]
+  dockerfile = "Dockerfile"
+
+[processes]
+  app = "node dist/server.js"
+  worker = "node dist/worker-entry.js"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  # The worker process owns the sweep and the send queue.
+  RUN_WORKER_IN_PROCESS = "false"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  # Never scale the API to zero: a suspended machine cannot answer a magic-link
+  # click, and the first request after a cold start is the one that matters.
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.http_options.response.headers]
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+
+[[http_service.checks]]
+  grace_period = "20s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/health"
+
+# The worker has no HTTP service; it must simply never stop, or reminders stop.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  processes = ["app"]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  processes = ["worker"]

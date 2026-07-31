@@ -1,0 +1,82 @@
+## Production topology: API and worker are the same image with different
+## commands. The worker is separate so a slow send queue cannot stall requests,
+## and so the sweep is registered exactly once.
+##
+##   docker compose -f docker-compose.prod.yml up -d --build
+##
+## Expects a .env file alongside it. DATABASE_URL and REDIS_URL should point at
+## the service names below, not localhost.
+
+services:
+  api:
+    build: .
+    command: ["node", "dist/server.js"]
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+      # The worker container owns the sweep and the send queue.
+      RUN_WORKER_IN_PROCESS: "false"
+      DATABASE_URL: postgres://birthday:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/birthday
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  worker:
+    build: .
+    command: ["node", "dist/worker-entry.js"]
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://birthday:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/birthday
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+    # Exactly one. The sweep is a BullMQ repeatable job so a second replica
+    # would not double-send, but there is nothing to gain from one either.
+    deploy:
+      replicas: 1
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: birthday
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: birthday
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backups:/backups
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U birthday -d birthday"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    # noeviction is not optional: evicting a BullMQ key loses a send.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  redisdata:

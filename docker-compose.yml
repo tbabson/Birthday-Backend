@@ -1,0 +1,96 @@
+## Local development stack: `docker compose up -d` brings up the API and
+## everything it depends on. Migrations run at boot (src/server.ts), so there is
+## no separate migrate step.
+##
+## Code changes need `docker compose up -d --build api` — this runs the built
+## image, not `tsx watch`. For a fast edit-reload loop, run the API on the host
+## with `npm run dev` instead and use this file for the services only:
+##
+##   docker compose up -d postgres redis mailpit
+
+services:
+  api:
+    build: .
+    # Everything in one process, as in .env. The production topology splits the
+    # worker into its own container — see docker-compose.prod.yml.
+    env_file: [.env]
+    environment:
+      # .env addresses these services from the host (localhost:5433 etc). Inside
+      # the container they are reachable by service name on their native ports,
+      # and `localhost` would mean the API container itself.
+      DATABASE_URL: postgres://birthday:birthday@postgres:5432/birthday
+      REDIS_URL: redis://redis:6379
+      # Interpolated from .env, with Mailpit as the fallback. A checkout with
+      # no mail config gets the local sink and a working UI at :8025; once .env
+      # names a real provider, that wins. Hardcoding `mailpit` here would
+      # silently swallow real mail no matter what .env said.
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      RUN_WORKER_IN_PROCESS: "true"
+    ports:
+      # PORT is interpolated from .env, so this stays in step with APP_URL.
+      - "${PORT:-3000}:${PORT:-3000}"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      mailpit: { condition: service_started }
+    # Deliberately no restart policy, unlike prod: an API container that comes
+    # back on its own after a Docker Desktop restart would silently own port
+    # 4000 the next time you tried to `npm run dev` on the host.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:${PORT:-3000}/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: birthday
+      POSTGRES_PASSWORD: birthday
+      POSTGRES_DB: birthday
+    # Host port 5433, not 5432: a native Postgres install commonly already owns
+    # 5432, and connecting to the wrong server is a confusing failure.
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U birthday -d birthday"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # BullMQ requires no key eviction: losing a job key loses a send.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    # Host port 6380 for the same reason as Postgres above.
+    ports:
+      - "6380:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Local SMTP sink so you can see real rendered emails during development.
+  # UI at http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      # Host port is overridable because Windows (Hyper-V/WSL2) reserves blocks
+      # of low ports at boot, and 8025 often lands inside one — Docker then
+      # fails to bind with "socket ... forbidden by its access permissions".
+      # Check with: netsh interface ipv4 show excludedportrange protocol=tcp
+      # then set MAILPIT_UI_PORT in .env to a port outside those ranges.
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+
+volumes:
+  pgdata:
+  redisdata:
