@@ -1,24 +1,24 @@
-import 'dotenv/config';
-import { z } from 'zod';
+import "dotenv/config";
+import { z } from "zod";
 
 const bool = z
   .string()
-  .transform((v) => v === 'true' || v === '1')
+  .transform((v) => v === "true" || v === "1")
   .pipe(z.boolean());
 
 const schema = z.object({
   NODE_ENV: z
-    .enum(['development', 'test', 'production'])
-    .default('development'),
+    .enum(["development", "test", "production"])
+    .default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
   /**
    * Interface to bind. 0.0.0.0 is required inside a container, where binding
    * to loopback makes the service unreachable from outside it. Override to
    * 127.0.0.1 to keep the API off the network on a shared machine.
    */
-  HOST: z.string().default('0.0.0.0'),
-  APP_URL: z.string().url().default('http://localhost:3000'),
-  WEB_URL: z.string().url().default('http://localhost:5173'),
+  HOST: z.string().default("0.0.0.0"),
+  APP_URL: z.string().url().default("http://localhost:3000"),
+  WEB_URL: z.string().url().default("http://localhost:5173"),
   /**
    * Extra browser origins allowed to call the API, comma-separated. WEB_URL is
    * always allowed and does not need repeating. Useful for preview deploys.
@@ -39,12 +39,12 @@ const schema = z.object({
    * origin checking becomes mandatory rather than defence in depth. See
    * `http/middleware/csrf.ts`.
    */
-  COOKIE_SAMESITE: z.enum(['lax', 'none', 'strict']).default('lax'),
+  COOKIE_SAMESITE: z.enum(["lax", "none", "strict"]).default("lax"),
   /**
    * `auto` means: on in production, and always on when SameSite=None (the
    * browser rejects `SameSite=None` without `Secure`).
    */
-  COOKIE_SECURE: z.enum(['auto', 'true', 'false']).default('auto'),
+  COOKIE_SECURE: z.enum(["auto", "true", "false"]).default("auto"),
   /**
    * Set to a parent domain (`.example.com`) to share the session across
    * subdomains. Leave unset for a host-only cookie, which is the safer default.
@@ -52,17 +52,20 @@ const schema = z.object({
   COOKIE_DOMAIN: z.string().optional(),
 
   DATABASE_URL: z.string().min(1),
-  REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
+  REDIS_URL: z.string().min(1).default("redis://localhost:6379"),
 
   SESSION_SECRET: z.string().min(32),
   SESSION_TTL_DAYS: z.coerce.number().int().positive().default(30),
   MAGIC_LINK_TTL_MINUTES: z.coerce.number().int().positive().default(15),
 
-  EMAIL_PROVIDER: z.enum(['console', 'smtp']).default('console'),
-  EMAIL_FROM: z.string().min(1).default('Birthday Reminder <reminders@example.com>'),
-  SMTP_HOST: z.string().default('localhost'),
+  EMAIL_PROVIDER: z.enum(["console", "smtp"]).default("console"),
+  EMAIL_FROM: z
+    .string()
+    .min(1)
+    .default("Birthday Reminder <reminders@example.com>"),
+  SMTP_HOST: z.string().default("localhost"),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
-  SMTP_SECURE: bool.default('false'),
+  SMTP_SECURE: bool.default("false"),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
 
@@ -70,7 +73,11 @@ const schema = z.object({
   // raise them — every test shares one source IP, which would otherwise trip
   // the limiter rather than exercise the endpoint.
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(5),
-  AUTH_RATE_LIMIT_WINDOW_MINUTES: z.coerce.number().int().positive().default(15),
+  AUTH_RATE_LIMIT_WINDOW_MINUTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(15),
   WRITE_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(60),
 
   // Web push (§5.3 channel v1.5). Generate a pair with `npx web-push generate-vapid-keys`.
@@ -78,13 +85,13 @@ const schema = z.object({
   // email remains the guaranteed channel.
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
-  VAPID_SUBJECT: z.string().default('mailto:reminders@example.com'),
+  VAPID_SUBJECT: z.string().default("mailto:tbabson20@gmail.com"),
 
   /** Largest CSV accepted by the import endpoint, in bytes. */
   IMPORT_MAX_BYTES: z.coerce.number().int().positive().default(2_000_000),
   IMPORT_MAX_ROWS: z.coerce.number().int().positive().default(5_000),
 
-  RUN_WORKER_IN_PROCESS: bool.default('true'),
+  RUN_WORKER_IN_PROCESS: bool.default("true"),
   NOTIFICATION_GRACE_HOURS: z.coerce.number().int().positive().default(12),
   NOTIFICATION_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
 });
@@ -93,8 +100,8 @@ const parsed = schema.safeParse(process.env);
 
 if (!parsed.success) {
   const issues = parsed.error.issues
-    .map((i) => `  ${i.path.join('.')}: ${i.message}`)
-    .join('\n');
+    .map((i) => `  ${i.path.join(".")}: ${i.message}`)
+    .join("\n");
   throw new Error(`Invalid environment configuration:\n${issues}`);
 }
 
@@ -107,28 +114,28 @@ const raw = parsed.data;
  * readable message beats debugging that.
  */
 const cookieSecure =
-  raw.COOKIE_SECURE === 'auto'
-    ? raw.NODE_ENV === 'production' || raw.COOKIE_SAMESITE === 'none'
-    : raw.COOKIE_SECURE === 'true';
+  raw.COOKIE_SECURE === "auto"
+    ? raw.NODE_ENV === "production" || raw.COOKIE_SAMESITE === "none"
+    : raw.COOKIE_SECURE === "true";
 
-if (raw.COOKIE_SAMESITE === 'none' && !cookieSecure) {
+if (raw.COOKIE_SAMESITE === "none" && !cookieSecure) {
   throw new Error(
-    'Invalid environment configuration:\n' +
-      '  COOKIE_SAMESITE=none requires a Secure cookie, but COOKIE_SECURE=false.\n' +
-      '  Browsers discard SameSite=None cookies that are not Secure, so sign-in\n' +
-      '  would silently never persist. Serve the API over HTTPS and unset\n' +
-      '  COOKIE_SECURE (or set it to true).',
+    "Invalid environment configuration:\n" +
+      "  COOKIE_SAMESITE=none requires a Secure cookie, but COOKIE_SECURE=false.\n" +
+      "  Browsers discard SameSite=None cookies that are not Secure, so sign-in\n" +
+      "  would silently never persist. Serve the API over HTTPS and unset\n" +
+      "  COOKIE_SECURE (or set it to true).",
   );
 }
 
-if (raw.COOKIE_SAMESITE === 'none' && !raw.APP_URL.startsWith('https://')) {
+if (raw.COOKIE_SAMESITE === "none" && !raw.APP_URL.startsWith("https://")) {
   // localhost is a secure context by browser policy, so it is exempt.
   const host = new URL(raw.APP_URL).hostname;
-  if (host !== 'localhost' && host !== '127.0.0.1') {
+  if (host !== "localhost" && host !== "127.0.0.1") {
     throw new Error(
-      'Invalid environment configuration:\n' +
+      "Invalid environment configuration:\n" +
         `  COOKIE_SAMESITE=none requires an HTTPS APP_URL, got ${raw.APP_URL}.\n` +
-        '  A Secure cookie is not sent over plain HTTP.',
+        "  A Secure cookie is not sent over plain HTTP.",
     );
   }
 }
@@ -136,9 +143,9 @@ if (raw.COOKIE_SAMESITE === 'none' && !raw.APP_URL.startsWith('https://')) {
 /** Every browser origin permitted to call this API with credentials. */
 const allowedOrigins = [
   raw.WEB_URL,
-  ...(raw.ALLOWED_ORIGINS ?? '')
-    .split(',')
-    .map((o) => o.trim().replace(/\/$/, ''))
+  ...(raw.ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((o) => o.trim().replace(/\/$/, ""))
     .filter(Boolean),
 ];
 
