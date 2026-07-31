@@ -343,6 +343,9 @@ otherwise trip the limiter rather than exercise the endpoint.
 
 ## API
 
+Full reference with request/response bodies, error codes, rate limits and
+object shapes: **[`docs/API.md`](docs/API.md)**. The summary:
+
 ```
 POST   /auth/magic-link          { email, timezone? }
 GET    /auth/verify?token=       -> 302 + session cookie
@@ -367,8 +370,17 @@ GET    /upcoming?window=30
 GET    /dashboard
 GET    /calendar?year=2027       per-day counts for the yearly heatmap
 GET    /notifications?status=&limit=
+GET    /notifications/scheduled?window=30   what is coming, from contacts
 POST   /notifications/test       sends a sample; writes no row
-GET    /notifications/unsubscribe?u=&s=
+GET    /notifications/unsubscribe?u=&s=     public, HMAC-signed, HTML
+
+GET    /recipients               extra addresses that get copies; max 5
+POST   /recipients               { email, label? } — sends a confirmation
+POST   /recipients/:id/resend
+DELETE /recipients/:id
+GET    /recipients/confirm?r=&s=  public, HMAC-signed, HTML
+GET    /recipients/remove?r=&s=   renders a button; changes nothing
+POST   /recipients/remove         form-urlencoded r + s; performs the removal
 
 GET    /push/public-key          VAPID key + whether push is enabled
 POST   /push/subscribe           browser PushSubscription JSON
