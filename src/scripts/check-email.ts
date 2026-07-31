@@ -26,9 +26,15 @@ async function main(): Promise<void> {
 
   console.log('Mail configuration');
   console.log(`  provider   ${env.EMAIL_PROVIDER}`);
-  console.log(`  host       ${env.SMTP_HOST}:${env.SMTP_PORT} (secure=${env.SMTP_SECURE})`);
-  console.log(`  user       ${env.SMTP_USER || '(none)'}`);
-  console.log(`  password   ${mask(env.SMTP_PASS)}`);
+  // Printing SMTP settings under the Brevo provider would be actively
+  // misleading — none of them are read.
+  if (env.EMAIL_PROVIDER !== 'brevo') {
+    console.log(`  host       ${env.SMTP_HOST}:${env.SMTP_PORT} (secure=${env.SMTP_SECURE})`);
+    console.log(`  user       ${env.SMTP_USER || '(none)'}`);
+    console.log(`  password   ${mask(env.SMTP_PASS)}`);
+  } else {
+    console.log(`  api key    ${mask(env.BREVO_API_KEY)}`);
+  }
   console.log(`  from       ${env.EMAIL_FROM}`);
   console.log(`  to         ${to}\n`);
 

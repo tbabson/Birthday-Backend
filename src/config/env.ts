@@ -58,7 +58,14 @@ const schema = z.object({
   SESSION_TTL_DAYS: z.coerce.number().int().positive().default(30),
   MAGIC_LINK_TTL_MINUTES: z.coerce.number().int().positive().default(15),
 
-  EMAIL_PROVIDER: z.enum(["console", "smtp"]).default("console"),
+  /**
+   * `smtp` is right wherever outbound SMTP is permitted. Several managed hosts
+   * block it outright to curb spam — Render times out on port 587 — and no
+   * amount of host/port/credential fiddling changes that, because the packets
+   * never leave the container. `brevo` posts to an HTTPS API on 443 instead,
+   * which those hosts do allow.
+   */
+  EMAIL_PROVIDER: z.enum(["console", "smtp", "brevo"]).default("console"),
   EMAIL_FROM: z
     .string()
     .min(1)
@@ -68,6 +75,8 @@ const schema = z.object({
   SMTP_SECURE: bool.default("false"),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
+  /** v3 key from Brevo → SMTP & API → API Keys. Only read when EMAIL_PROVIDER=brevo. */
+  BREVO_API_KEY: z.string().optional(),
 
   // §6.7: rate limits on auth and import. Env-driven so the test suite can
   // raise them — every test shares one source IP, which would otherwise trip
@@ -138,6 +147,20 @@ if (raw.COOKIE_SAMESITE === "none" && !raw.APP_URL.startsWith("https://")) {
         "  A Secure cookie is not sent over plain HTTP.",
     );
   }
+}
+
+/**
+ * Without a key the Brevo provider would build cleanly and then fail on every
+ * send with a 401 — and because a delivery failure is deliberately swallowed
+ * so it cannot leak which addresses exist, the only symptom would be mail that
+ * never arrives. Refuse to start instead.
+ */
+if (raw.EMAIL_PROVIDER === "brevo" && !raw.BREVO_API_KEY) {
+  throw new Error(
+    "Invalid environment configuration:\n" +
+      "  EMAIL_PROVIDER=brevo requires BREVO_API_KEY.\n" +
+      "  Create one at Brevo → SMTP & API → API Keys.",
+  );
 }
 
 /** Every browser origin permitted to call this API with credentials. */

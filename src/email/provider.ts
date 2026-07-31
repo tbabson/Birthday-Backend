@@ -92,6 +92,106 @@ class SmtpProvider implements EmailProvider {
   }
 }
 
+/**
+ * Splits `Name <addr@host>` into the structured sender Brevo's API expects.
+ * A bare address is accepted too, since EMAIL_FROM allows both forms.
+ */
+export function parseAddress(value: string): { name?: string; email: string } {
+  const match = /^\s*(.*?)\s*<([^>]+)>\s*$/.exec(value);
+  if (!match) return { email: value.trim() };
+
+  // A quoted display name is legal in a mail header but is not a name to Brevo.
+  const name = match[1]!.replace(/^"|"$/g, '').trim();
+  const email = match[2]!.trim();
+  return name ? { name, email } : { email };
+}
+
+/**
+ * Brevo's transactional HTTP API.
+ *
+ * Exists because managed hosts routinely block outbound SMTP to curb spam —
+ * Render times out on port 587 — and no credential or port change fixes that,
+ * because the packets never leave the container. This is an ordinary HTTPS
+ * request to port 443, which those hosts do allow.
+ */
+class BrevoProvider implements EmailProvider {
+  readonly name = 'brevo';
+  private readonly sender: { name?: string; email: string };
+
+  constructor(private readonly apiKey: string) {
+    this.sender = parseAddress(env.EMAIL_FROM);
+  }
+
+  private async post(path: string, body?: unknown): Promise<Response> {
+    try {
+      return await fetch(`https://api.brevo.com/v3${path}`, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: {
+          'api-key': this.apiKey,
+          accept: 'application/json',
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        // A hung request would otherwise occupy a worker slot indefinitely;
+        // failing lets BullMQ retry with backoff, exactly as SMTP does.
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (err) {
+      const reason = (err as Error)?.name === 'TimeoutError' ? 'timed out' : (err as Error).message;
+      throw new Error(`Could not reach the Brevo API: ${reason}`, { cause: err });
+    }
+  }
+
+  async send(message: EmailMessage): Promise<{ messageId: string | null }> {
+    const response = await this.post('/smtp/email', {
+      sender: this.sender,
+      to: [{ email: message.to }],
+      subject: message.subject,
+      textContent: message.text,
+      htmlContent: message.html,
+      ...(message.unsubscribeUrl
+        ? { headers: { 'List-Unsubscribe': `<${message.unsubscribeUrl}>` } }
+        : {}),
+    });
+
+    if (!response.ok) throw new Error(await explainBrevoError(response));
+
+    const body = (await response.json().catch(() => ({}))) as { messageId?: string };
+    return { messageId: body.messageId ?? null };
+  }
+
+  /** Checks the key without sending. Used by the CLI check, mirroring SmtpProvider. */
+  async verify(): Promise<void> {
+    const response = await this.post('/account');
+    if (!response.ok) throw new Error(await explainBrevoError(response));
+  }
+}
+
+/** The Brevo counterpart to `explainSmtpError` — the two failures that actually happen. */
+async function explainBrevoError(response: Response): Promise<string> {
+  const raw = await response.text().catch(() => '');
+  let message: string | undefined;
+  try {
+    message = (JSON.parse(raw) as { message?: string }).message;
+  } catch {
+    // A non-JSON body (a gateway error page, say); the status carries the meaning.
+  }
+
+  if (response.status === 401) {
+    return (
+      'Brevo rejected the API key. BREVO_API_KEY must be a v3 API key from ' +
+      'Brevo → SMTP & API → API Keys — an SMTP password will not work here.'
+    );
+  }
+  if (response.status === 400 && /sender/i.test(message ?? '')) {
+    return (
+      `Brevo refused the sender address (${message}). The address in ` +
+      'EMAIL_FROM must be verified under Brevo → Senders, Domains & Dedicated IPs.'
+    );
+  }
+  return `Brevo send failed (${response.status})${message ? `: ${message}` : ''}`;
+}
+
 function isLocalSink(host: string): boolean {
   return host === 'localhost' || host === '127.0.0.1' || host === 'mailpit';
 }
@@ -131,7 +231,17 @@ let provider: EmailProvider | undefined;
 
 export function getEmailProvider(): EmailProvider {
   if (!provider) {
-    provider = env.EMAIL_PROVIDER === 'smtp' ? new SmtpProvider() : new ConsoleProvider();
+    switch (env.EMAIL_PROVIDER) {
+      case 'smtp':
+        provider = new SmtpProvider();
+        break;
+      case 'brevo':
+        // env.ts refuses to boot without the key, so this cannot be empty.
+        provider = new BrevoProvider(env.BREVO_API_KEY!);
+        break;
+      default:
+        provider = new ConsoleProvider();
+    }
     logger.info({ provider: provider.name }, 'email provider ready');
   }
   return provider;
