@@ -1,0 +1,117 @@
+# Render Blueprint — free tier, single service.
+#
+#   Dashboard → New → Blueprint → pick this repo → fill the prompted values.
+#
+# Render has no free instance type for background workers, so the sweep
+# scheduler and the send worker run inside the API process here
+# (RUN_WORKER_IN_PROCESS=true) rather than as the separate `worker` process
+# group that fly.toml uses. That is only safe because the service never sleeps:
+# a free web service suspends after 15 minutes idle, and a suspended process
+# runs no hourly sweep. An external ping every 10 minutes keeps it awake —
+# see the "Keeping it awake" section of the README.
+#
+# Two free-tier facts worth knowing before this goes anywhere real:
+#   - Free Postgres is DELETED 30 days after creation. Upgrade the database to
+#     a paid plan, or take a dump with scripts/backup.sh before then.
+#   - Free Key Value has no persistence. BullMQ jobs are lost on a restart, but
+#     Postgres is the source of truth and runBootRecovery() re-drives anything
+#     still pending inside the grace window, so a restart costs nothing.
+
+databases:
+  - name: birthday-db
+    databaseName: birthday
+    user: birthday
+    plan: free
+    region: frankfurt # closest Render region to Lagos
+
+services:
+  - type: keyvalue
+    name: birthday-redis
+    plan: free
+    region: frankfurt
+    # Evicting a BullMQ key loses a send, so never evict — fail the write
+    # instead and let the sweep re-create the job.
+    maxmemoryPolicy: noeviction
+    # Empty list = internal connections only. The API reaches it over the
+    # private network; nothing outside Render can.
+    ipAllowList: []
+
+  - type: web
+    name: birthday-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    region: frankfurt
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: HOST
+        value: 0.0.0.0
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: birthday-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: birthday-redis
+          property: connectionString
+
+      # Generated once by Render and kept across deploys. Rotating it logs
+      # every user out.
+      - key: SESSION_SECRET
+        generateValue: true
+
+      # No free worker instance type, so the API owns the sweep and the queue.
+      - key: RUN_WORKER_IN_PROCESS
+        value: true
+
+      # This service's own public origin, used to build magic-link URLs. Render
+      # cannot supply it as a full URL, so it is prompted for: after the first
+      # deploy, set it to the service URL shown in the dashboard
+      # (https://birthday-api.onrender.com, unless the name was taken).
+      - key: APP_URL
+        sync: false
+      # Origin of the React frontend — CORS and the post-login redirect.
+      - key: WEB_URL
+        sync: false
+
+      # onrender.com is on the public suffix list, so an app on a different
+      # onrender.com subdomain (or on Netlify/Vercel) is genuinely cross-site:
+      # a Lax session cookie would never be sent. None is required, which makes
+      # the origin check in http/middleware/csrf.ts load-bearing rather than
+      # defence in depth. Render terminates TLS, so Secure is satisfied.
+      - key: COOKIE_SAMESITE
+        value: none
+
+      - key: EMAIL_PROVIDER
+        value: smtp
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_SECURE # 587 is STARTTLS; 465 would be true
+        value: false
+      # Gmail rewrites any From that is not the authenticated account, so
+      # EMAIL_FROM must use the same address as SMTP_USER.
+      - key: EMAIL_FROM
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+
+      # Absent keys disable web push rather than failing startup; email stays
+      # the guaranteed channel. Reuse the pair from .env or generate a new one
+      # with `npx web-push generate-vapid-keys`.
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
