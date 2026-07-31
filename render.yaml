@@ -71,23 +71,33 @@ services:
       - key: RUN_WORKER_IN_PROCESS
         value: true
 
-      # This service's own public origin, used to build magic-link URLs. Render
-      # cannot supply it as a full URL, so it is prompted for: after the first
-      # deploy, set it to the service URL shown in the dashboard
-      # (https://birthday-api.onrender.com, unless the name was taken).
+      # The public base URL that magic links are built from. This must be the
+      # address the *browser* uses, which is not this service's own origin: the
+      # frontend proxies /api/* through to here, so links have to point at the
+      # proxy. Set it to https://<your-app>.vercel.app/api — following a link
+      # straight to onrender.com would set the session cookie on the wrong
+      # domain, and sign-in would bounce back to /sign-in.
       - key: APP_URL
         sync: false
       # Origin of the React frontend — CORS and the post-login redirect.
       - key: WEB_URL
         sync: false
 
-      # onrender.com is on the public suffix list, so an app on a different
-      # onrender.com subdomain (or on Netlify/Vercel) is genuinely cross-site:
-      # a Lax session cookie would never be sent. None is required, which makes
-      # the origin check in http/middleware/csrf.ts load-bearing rather than
-      # defence in depth. Render terminates TLS, so Secure is satisfied.
+      # Lax is correct because the proxy makes app and API one origin, so the
+      # cookie is first-party and no browser has cause to drop it. SameSite=None
+      # was the alternative when the frontend called onrender.com directly, and
+      # it does not survive contact with Safari, Chrome Incognito, or the in-app
+      # browsers where magic links are usually opened — they discard
+      # third-party cookies whatever the server asks for.
       - key: COOKIE_SAMESITE
-        value: none
+        value: lax
+
+      # Two proxies now sit in front of this service: Vercel's rewrite and
+      # Render's own router. Leaving this at the default 1 would key every rate
+      # limit to Vercel's edge address, so five sign-in attempts would exhaust
+      # the limit for every user at once rather than per person.
+      - key: TRUST_PROXY
+        value: 2
 
       # Render blocks outbound SMTP, so port 587 simply times out here however
       # the credentials are set — the packets never leave the container. Brevo's

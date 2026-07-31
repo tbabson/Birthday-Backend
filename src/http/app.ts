@@ -51,7 +51,10 @@ export function createApp(): Express {
 
   // Behind Railway/Fly/nginx the client IP arrives in X-Forwarded-For; without
   // this the rate limiters would key every request to the proxy's address.
-  app.set('trust proxy', 1);
+  // The count is configurable because it is a property of the deployment, not
+  // of the app: proxying the frontend's /api/* through to this service adds a
+  // hop, and a stale `1` would collapse every caller into one bucket.
+  app.set('trust proxy', env.TRUST_PROXY);
 
   app.use(helmet());
   app.use(cors);

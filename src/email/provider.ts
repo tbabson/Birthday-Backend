@@ -177,21 +177,32 @@ async function explainBrevoError(response: Response): Promise<string> {
     // A non-JSON body (a gateway error page, say); the status carries the meaning.
   }
 
+  /*
+   * Brevo answers 401 for several unrelated causes — an unknown key, an
+   * account awaiting activation, a caller outside the authorised-IP list — and
+   * only its own message distinguishes them. An IP rejection is called out
+   * separately because the key is *correct* in that case, and appending advice
+   * about key formats to it sends you auditing a credential that was never the
+   * problem.
+   */
+  if (response.status === 401 && /ip address/i.test(message ?? '')) {
+    return (
+      `Brevo refused the request on IP grounds: ${message} ` +
+      'The API key itself is fine — this is the Authorised IPs restriction ' +
+      'under Brevo → Security. Add every outbound address this service can ' +
+      "call from, not just the one named above: a host's egress rotates across " +
+      'a small pool, so allowlisting a single IP fails again on the next call ' +
+      "from a sibling. Render lists the full set under the service's " +
+      'Connect → Outbound.'
+    );
+  }
   if (response.status === 401) {
-    /*
-     * Brevo answers 401 for several unrelated causes — an unknown key, an
-     * account still awaiting activation, a caller outside the authorised-IP
-     * list — and only its own message distinguishes them. Dropping it in
-     * favour of a fixed sentence sends you looking at the key when the key
-     * was never the problem.
-     */
     return (
       `Brevo rejected the request (401)${message ? `: ${message}` : ''}. ` +
       'BREVO_API_KEY must be a v3 API key from Brevo → SMTP & API → API Keys ' +
       '— it starts with `xkeysib-`, whereas an SMTP password (`xsmtpsib-`) is ' +
       'a different credential and is always refused here. If the key is right, ' +
-      "check that the account is activated and that Brevo's authorised-IP list " +
-      'is empty or includes this server.'
+      'check that the account is activated.'
     );
   }
   if (response.status === 400 && /sender/i.test(message ?? '')) {

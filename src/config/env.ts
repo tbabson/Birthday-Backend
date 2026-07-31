@@ -17,6 +17,22 @@ const schema = z.object({
    * 127.0.0.1 to keep the API off the network on a shared machine.
    */
   HOST: z.string().default("0.0.0.0"),
+  /**
+   * How many reverse proxies sit in front of this process. Express uses the
+   * count to pick the client's address out of `X-Forwarded-For`, and the rate
+   * limiters key on that address.
+   *
+   * `1` suits a single platform proxy (Render, Fly, nginx on its own). `2` is
+   * right when the frontend host proxies as well — routing the app's `/api/*`
+   * through Vercel to Render adds a hop.
+   *
+   * Both directions of error are worth avoiding. Too low resolves every
+   * request to the nearest proxy's address, so the whole internet shares one
+   * rate-limit bucket and `AUTH_RATE_LIMIT_MAX` locks out every user at once.
+   * Too high lets a caller name its own address in `X-Forwarded-For`, which
+   * makes the limits opt-out.
+   */
+  TRUST_PROXY: z.coerce.number().int().min(0).default(1),
   APP_URL: z.string().url().default("http://localhost:3000"),
   WEB_URL: z.string().url().default("http://localhost:5173"),
   /**

@@ -275,6 +275,39 @@ The middle row catches people out: different *subdomains* of one registrable
 domain are same-site, so `Lax` works there and you should use it. Only
 genuinely different registrable domains need `None`.
 
+**Treat the third row as a last resort, not a supported topology.** `None` is
+the correct *server* answer for a cross-site split, and the server no longer
+gets the last word: Safari discards third-party cookies outright under ITP, so
+do Chrome Incognito and Brave, and so do the in-app browsers inside Gmail and
+Outlook — which is precisely where a magic link gets opened. Everything
+inspectable looks right (the cookie is set, CORS echoes the origin, the
+attributes read `None; Secure`) and sign-in still lands back on `/sign-in`,
+because `/me` answers 401 for want of a cookie the browser declined to send.
+No server setting fixes that.
+
+Collapse to one origin instead. A frontend host that can proxy turns the third
+row into the first for free — this deployment rewrites the app's `/api/*` to
+the backend, so the cookie is first-party and browser policy stops mattering:
+
+```jsonc
+// vercel.json, in the frontend repo — the /api rule must come first, or the
+// SPA catch-all answers every API path with index.html
+{
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "https://<service>.onrender.com/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
+```
+
+Two things move with it. `APP_URL` must become the **proxied** base
+(`https://<app>.vercel.app/api`), because magic links have to point at the
+address the browser uses rather than at the backend's own origin — a link
+straight to `onrender.com` sets the cookie on the wrong domain and undoes the
+whole arrangement. And `TRUST_PROXY` becomes `2`: the extra hop means Express
+reads the proxy's address as the client's unless it is told how many to skip,
+and every rate limit would otherwise share a single bucket for all users.
+
 ```bash
 # cross-site only
 COOKIE_SAMESITE=none      # implies Secure; boot fails if APP_URL is not HTTPS
