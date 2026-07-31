@@ -168,8 +168,34 @@ it is exactly 16 characters, and a normal Google password is *always* rejected
 with an unhelpful 535. `email:check` catches an empty or wrong-length one before
 it ever reaches Gmail.
 
-**Anything else** is the same five variables — Resend, SES, Brevo and Postmark
-all speak SMTP, so no code changes, only `.env`.
+**Brevo** (`EMAIL_PROVIDER=brevo`) posts to Brevo's transactional HTTP API
+instead of speaking SMTP, and exists for one reason: managed hosts routinely
+block outbound SMTP to curb spam. Render times out on port 587, and no change of
+host, port or credential fixes it, because the packets never leave the
+container. Port 443 is allowed, so an HTTPS API call gets through where SMTP
+cannot. It needs two variables and ignores every `SMTP_*` one:
+
+```bash
+EMAIL_PROVIDER=brevo
+BREVO_API_KEY=xkeysib-...                       # SMTP & API → API Keys (a v3 key, not the SMTP password)
+EMAIL_FROM="Birthday Reminder <you@example.com>" # verified under Senders, Domains & Dedicated IPs
+```
+
+The sender is the part people get wrong: an unverified `EMAIL_FROM` is refused
+with a 400 on every send. `email:check` names both failures — a rejected key and
+a rejected sender — rather than leaving you with a bare status code. Free tier
+is 300 mails/day, which is far more than a personal register sends.
+
+The other trap is **Authorised IPs** (Brevo → Security → Authorised IPs). With
+the restriction on, Brevo answers 401 to a perfectly valid key purely because of
+where the call came from, and the message reads like a credential problem when
+nothing is wrong with the credential. Either turn the restriction off, or add
+every outbound IP the API can call from — for Render those are listed under the
+service's Connect → Outbound. A home or office IP is rarely static, so an
+allowlist that includes your laptop will quietly expire.
+
+**Anything else** is the same five SMTP variables — Resend, SES and Postmark all
+speak SMTP, so no code changes, only `.env`.
 
 On an unencrypted port the transport sets `requireTLS`, so a failed STARTTLS
 upgrade is an error rather than a silent fallback to plaintext with the password

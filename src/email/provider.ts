@@ -178,9 +178,20 @@ async function explainBrevoError(response: Response): Promise<string> {
   }
 
   if (response.status === 401) {
+    /*
+     * Brevo answers 401 for several unrelated causes — an unknown key, an
+     * account still awaiting activation, a caller outside the authorised-IP
+     * list — and only its own message distinguishes them. Dropping it in
+     * favour of a fixed sentence sends you looking at the key when the key
+     * was never the problem.
+     */
     return (
-      'Brevo rejected the API key. BREVO_API_KEY must be a v3 API key from ' +
-      'Brevo → SMTP & API → API Keys — an SMTP password will not work here.'
+      `Brevo rejected the request (401)${message ? `: ${message}` : ''}. ` +
+      'BREVO_API_KEY must be a v3 API key from Brevo → SMTP & API → API Keys ' +
+      '— it starts with `xkeysib-`, whereas an SMTP password (`xsmtpsib-`) is ' +
+      'a different credential and is always refused here. If the key is right, ' +
+      "check that the account is activated and that Brevo's authorised-IP list " +
+      'is empty or includes this server.'
     );
   }
   if (response.status === 400 && /sender/i.test(message ?? '')) {

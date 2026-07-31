@@ -75,8 +75,13 @@ const schema = z.object({
   SMTP_SECURE: bool.default("false"),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
-  /** v3 key from Brevo → SMTP & API → API Keys. Only read when EMAIL_PROVIDER=brevo. */
-  BREVO_API_KEY: z.string().optional(),
+  /**
+   * v3 key from Brevo → SMTP & API → API Keys. Only read when
+   * EMAIL_PROVIDER=brevo. Trimmed because a dashboard paste picks up a
+   * trailing space or newline far too easily, and Brevo answers 401 to a key
+   * that is correct apart from the whitespace.
+   */
+  BREVO_API_KEY: z.string().trim().optional(),
 
   // §6.7: rate limits on auth and import. Env-driven so the test suite can
   // raise them — every test shares one source IP, which would otherwise trip
@@ -160,6 +165,23 @@ if (raw.EMAIL_PROVIDER === "brevo" && !raw.BREVO_API_KEY) {
     "Invalid environment configuration:\n" +
       "  EMAIL_PROVIDER=brevo requires BREVO_API_KEY.\n" +
       "  Create one at Brevo → SMTP & API → API Keys.",
+  );
+}
+
+/**
+ * Brevo hands out two credentials on the same screen, and they are easy to
+ * transpose: an SMTP password (`xsmtpsib-…`) and a v3 API key (`xkeysib-…`).
+ * Only the second authenticates an HTTP request — the first returns 401 on
+ * every send, and since a delivery failure is deliberately swallowed so it
+ * cannot leak which addresses exist, the only symptom is mail that never
+ * arrives. Catch it at boot, where the message can say what to fix.
+ */
+if (raw.EMAIL_PROVIDER === "brevo" && raw.BREVO_API_KEY?.startsWith("xsmtpsib-")) {
+  throw new Error(
+    "Invalid environment configuration:\n" +
+      "  BREVO_API_KEY is an SMTP password (it starts with `xsmtpsib-`), which\n" +
+      "  the HTTP API always rejects with a 401. The v3 API key starts with\n" +
+      "  `xkeysib-` and lives on the API Keys tab of the same Brevo screen.",
   );
 }
 

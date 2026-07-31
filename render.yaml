@@ -89,21 +89,19 @@ services:
       - key: COOKIE_SAMESITE
         value: none
 
+      # Render blocks outbound SMTP, so port 587 simply times out here however
+      # the credentials are set — the packets never leave the container. Brevo's
+      # transactional API is an ordinary HTTPS request to 443, which is allowed.
+      # The SMTP_* variables are not read under this provider.
       - key: EMAIL_PROVIDER
-        value: smtp
-      - key: SMTP_HOST
-        value: smtp.gmail.com
-      - key: SMTP_PORT
-        value: 587
-      - key: SMTP_SECURE # 587 is STARTTLS; 465 would be true
-        value: false
-      # Gmail rewrites any From that is not the authenticated account, so
-      # EMAIL_FROM must use the same address as SMTP_USER.
+        value: brevo
+      # v3 key from Brevo → SMTP & API → API Keys. An SMTP password will not
+      # work here; the service refuses to boot without it.
+      - key: BREVO_API_KEY
+        sync: false
+      # Must be an address verified under Brevo → Senders, Domains & Dedicated
+      # IPs, or every send is refused with a 400.
       - key: EMAIL_FROM
-        sync: false
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASS
         sync: false
 
       # Absent keys disable web push rather than failing startup; email stays
