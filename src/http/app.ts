@@ -5,6 +5,7 @@ import { pinoHttp } from 'pino-http';
 import { env } from '../config/env.js';
 import { logger } from '../logger.js';
 import { errorHandler, notFoundHandler } from './errors.js';
+import { renderLandingPage } from './landing.js';
 import { loadSession } from './middleware/auth.js';
 import { isAllowedOrigin, verifyOrigin } from './middleware/csrf.js';
 import { authRouter } from './routes/auth.js';
@@ -78,19 +79,15 @@ export function createApp(): Express {
   app.use(loadSession);
 
   /**
-   * A signpost, not an index. Anyone who opens the base URL in a browser would
-   * otherwise get a bare 404 and reasonably conclude the service is down, so
-   * this points them at the health check and the reference. It deliberately
-   * lists neither the routes nor a version — an unauthenticated caller has no
-   * need of either.
+   * The API reference, at the root. Anyone who opens the base URL in a browser
+   * would otherwise get a bare 404 and reasonably conclude the service is down.
+   *
+   * Rendered once at startup rather than per request: it is a static document
+   * whose only variable is APP_URL, which cannot change while the process runs.
    */
+  const landingPage = renderLandingPage(env.APP_URL);
   app.get('/', (_req, res) => {
-    res.json({
-      service: 'birthday-reminder-api',
-      status: 'up',
-      health: '/health',
-      docs: 'https://github.com/tbabson/Birthday-Backend/blob/main/docs/API.md',
-    });
+    res.type('html').send(landingPage);
   });
 
   app.get('/health', (_req, res) => {
