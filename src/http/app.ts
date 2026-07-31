@@ -77,6 +77,22 @@ export function createApp(): Express {
   app.use(verifyOrigin);
   app.use(loadSession);
 
+  /**
+   * A signpost, not an index. Anyone who opens the base URL in a browser would
+   * otherwise get a bare 404 and reasonably conclude the service is down, so
+   * this points them at the health check and the reference. It deliberately
+   * lists neither the routes nor a version — an unauthenticated caller has no
+   * need of either.
+   */
+  app.get('/', (_req, res) => {
+    res.json({
+      service: 'birthday-reminder-api',
+      status: 'up',
+      health: '/health',
+      docs: 'https://github.com/tbabson/Birthday-Backend/blob/main/docs/API.md',
+    });
+  });
+
   app.get('/health', (_req, res) => {
     res.json({ ok: true, status: 'up' });
   });
