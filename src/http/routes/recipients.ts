@@ -92,7 +92,7 @@ recipientsRouter.get('/remove', linkLimiter, async (req, res) => {
     page(
       'Stop receiving these reminders?',
       '<p style="color:#666d7a">You will no longer get birthday reminders from this register.</p>',
-      `<form method="post" action="/recipients/remove">
+      `<form method="post">
          <input type="hidden" name="r" value="${id}">
          <input type="hidden" name="s" value="${sig}">
          <button type="submit" style="width:100%;min-height:44px;margin-top:16px;border:0;border-radius:12px;background:#c02626;color:#fff;font-size:16px;font-weight:600">Yes, stop them</button>
