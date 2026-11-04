@@ -40,7 +40,7 @@ async function main(): Promise<void> {
 
   if (env.EMAIL_PROVIDER === 'console') {
     console.log('EMAIL_PROVIDER is "console", so nothing will actually be sent.');
-    console.log('Set EMAIL_PROVIDER=smtp in .env to send for real.\n');
+    console.log('Set EMAIL_PROVIDER=smtp or brevo in .env to send for real.\n');
   }
 
   // The likeliest state on first run, and it deserves an instruction rather
@@ -92,7 +92,7 @@ async function main(): Promise<void> {
 
   console.log(`\nSent to ${to}`);
   if (messageId) console.log(`Message id: ${messageId}`);
-  if (env.SMTP_HOST === 'mailpit' || env.SMTP_HOST === 'localhost') {
+  if (env.EMAIL_PROVIDER === 'smtp' && (env.SMTP_HOST === 'mailpit' || env.SMTP_HOST === 'localhost')) {
     console.log('Using the local sink — open http://localhost:8025 to read it.');
   } else {
     console.log('Check the inbox (and the spam folder the first time).');
